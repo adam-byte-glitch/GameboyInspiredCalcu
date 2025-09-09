@@ -1,0 +1,1150 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Calculator</title>
+    <!-- Retro/digital fonts for LCD numerals -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=VT323&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        /* Game Boy DMG palette */
+        --gb-light: #9bbc0f; /* screen light */
+        --gb-mid:   #8bac0f;
+        --gb-deep:  #306230;
+        --gb-dark:  #0f380f;
+        --dmg-body: #d9d6cf; /* console body */
+        --dmg-body-2: #cfcac2;
+        --btn-plum: #7b3f61; /* A/B buttons */
+        --btn-plum-dark: #5a2d47;
+        --dpad: #404852; /* D-pad gray */
+        --text: #0f172a;
+        --screen-text: #0b250b;
+        --shadow: 0 14px 40px rgba(0,0,0,.35);
+        --radius: 16px;
+      }
+
+      * { box-sizing: border-box; }
+      html, body { height: 100%; }
+      body {
+        margin: 0;
+        position: relative;
+        overflow: hidden;
+        font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+        color: var(--text);
+        display: grid;
+        place-items: center;
+        padding: 32px;
+        isolation: isolate;
+      }
+
+      /* Dynamic 90s film overlay (moving grain + scratches + subtle flicker) */
+      @keyframes grainShift {
+        0%   { background-position: 0 0; }
+        100% { background-position: 256px 192px; }
+      }
+      @keyframes scanFlicker {
+        0%, 100% { opacity: .55; }
+        45% { opacity: .65; }
+        50% { opacity: .50; }
+        55% { opacity: .66; }
+        80% { opacity: .60; }
+      }
+      @keyframes filmJitter {
+        0%   { transform: translate(0,0); }
+        20%  { transform: translate(-0.5px, 0.4px); }
+        40%  { transform: translate(0.6px, -0.3px); }
+        60%  { transform: translate(-0.3px, -0.6px); }
+        80%  { transform: translate(0.4px, 0.5px); }
+        100% { transform: translate(0,0); }
+      }
+
+      /* Moving grain + scratch layer */
+      body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        pointer-events: none;
+        mix-blend-mode: screen; /* scratches pop on dark bg */
+        opacity: .55; /* stronger so it's clearly visible */
+        background-image:
+          /* fine film grain */
+          url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='128' height='128'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.28'/></svg>");
+        background-size: 256px 256px;
+        animation: grainShift 0.9s steps(8) infinite, filmJitter 2.2s ease-in-out infinite;
+        will-change: background-position, opacity;
+      }
+
+      /* Global retro overlay: strong vignette + scanlines + warm tint */
+      body::after {
+        content: "";
+        position: fixed;
+        inset: 0;
+        z-index: 9999; /* ensure above all content */
+        pointer-events: none;
+        opacity: .85;
+        mix-blend-mode: multiply; /* darken edges and lines */
+        background:
+          /* subtle warm tint */
+          linear-gradient(0deg, rgba(255,214,170,.08), rgba(255,214,170,.08)),
+          /* soft top glow + bottom vignette */
+          radial-gradient(120% 80% at 50% -20%, rgba(255,255,255,.06), transparent 60%),
+          radial-gradient(100% 120% at 50% 120%, rgba(0,0,0,.55), transparent 55%),
+          /* horizontal scanlines */
+          repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 1px, rgba(0,0,0,0) 1px 3px);
+        background-size: 100% 100%, 100% 100%, 100% 100%, 100% 100%;
+        /* gentle retro toning; supported browsers only */
+        backdrop-filter: saturate(0.9) contrast(1.06) brightness(0.96);
+        animation: scanFlicker 6s ease-in-out infinite, filmJitter 2.2s ease-in-out infinite;
+      }
+
+      /* Blurred arcade background layer. Drop assets/arcade-bg.jpg to replace gradient. */
+      .bg {
+        position: fixed;
+        inset: 0;
+        z-index: -3;
+        background:
+          url('assets/arcade-bg.jpg') center/cover no-repeat,
+          radial-gradient(1200px 800px at 20% 10%, #2b2b44 0%, #0d0f17 60%);
+        filter: 
+          blur(14px) 
+          brightness(0.55) 
+          saturate(1.25)
+          drop-shadow(0.3px 0 0 rgba(255, 0, 0, 0.09))
+          drop-shadow(-0.3px 0 0 rgba(0, 0, 255, 0.09))
+          drop-shadow(0 0.3px 0 rgba(0, 255, 0, 0.06));
+        transform: scale(1.08);
+      }
+      .bg::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(180deg, rgba(0,0,0,.2), rgba(0,0,0,.45));
+      }
+
+      .glbg, .trail {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+      }
+      .glbg { z-index: -2; display: block; }
+      .trail { z-index: -1; display: block; }
+
+      .calc {
+        width: 100%;
+        max-width: 380px;
+        background: linear-gradient(180deg, var(--dmg-body) 0%, var(--dmg-body-2) 100%);
+        border-radius: var(--radius);
+        /* Subtle cube-like depth using only inset shadows */
+        box-shadow:
+          var(--shadow),                          /* outer lift */
+          inset -12px 0 16px rgba(0,0,0,.17),     /* right wall shade */
+          inset 0 -12px 18px rgba(0,0,0,.22),     /* bottom wall shade */
+          inset 1px 0 0 rgba(255,255,255,.14),    /* left rim light */
+          inset 0 1px 0 rgba(255,255,255,.16);    /* top rim light */
+        border: 1px solid rgba(0,0,0,.08);
+        padding: 14px 14px 10px;
+        position: relative;
+        z-index: 2;
+      }
+      /* 3D effect: opt-in via .has-3d-effect on .calc */
+      .has-3d-effect.calc {
+        /* slightly stronger inner lip and gentle surface shaping; no layout change */
+        box-shadow:
+          var(--shadow),
+          inset -14px 0 18px rgba(0,0,0,.16),
+          inset 0 -14px 20px rgba(0,0,0,.20),
+          inset 1px 0 0 rgba(255,255,255,.16),
+          inset 0 1px 0 rgba(255,255,255,.18),
+          inset 0 0 0 1px rgba(255,255,255,.06);
+        background-image:
+          linear-gradient(180deg, var(--dmg-body) 0%, var(--dmg-body-2) 100%),
+          radial-gradient(120% 80% at 15% 0%, rgba(255,255,255,.05), transparent 55%),
+          radial-gradient(120% 90% at 100% 120%, rgba(0,0,0,.05), transparent 60%);
+        background-blend-mode: normal, overlay, multiply;
+      }
+
+      /* Buttons: soft top highlight + bottom shadow (no size change) */
+      .has-3d-effect .keys button {
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.18),
+          inset 0 -3px 6px rgba(0,0,0,.22),
+          0 1px 0 rgba(255,255,255,.04);
+      }
+      .has-3d-effect .keys .op,
+      .has-3d-effect .keys .eq,
+      .has-3d-effect .keys .fn {
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.14),
+          inset 0 -3px 6px rgba(0,0,0,.28),
+          0 1px 0 rgba(255,255,255,.03);
+      }
+
+      /* Display screen: beveled inner frame */
+      .has-3d-effect .bezel {
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.16),
+          inset 0 -3px 10px rgba(0,0,0,.38),
+          inset 2px 0 6px rgba(0,0,0,.14),
+          inset -2px 0 6px rgba(255,255,255,.06);
+      }
+      .has-3d-effect .display {
+        box-shadow:
+          inset 0 0 0 2px rgba(255,255,255,.10),
+          inset 0 -8px 18px rgba(0,0,0,.18),
+          0 0 18px rgba(139,172,15,.12);
+        background-image:
+          linear-gradient(180deg, var(--gb-light), var(--gb-mid)),
+          repeating-linear-gradient(45deg, rgba(0,0,0,.02) 0 2px, rgba(255,255,255,.02) 2px 4px);
+        background-blend-mode: normal, overlay;
+      }
+      /* (reverted) no cube depth faces */
+      /* Edge bevels and rim lights */
+      /* (reverted) no calc bevel overlay */
+
+      .bezel {
+        position: relative;
+        border-radius: 14px;
+        padding: 10px;
+        /* Subtle metallic/plastic bezel with light from top-left */
+        background: linear-gradient(165deg, #2a2f3f 0%, #1a1e2a 55%, #121623 100%);
+        border: 1px solid rgba(255,255,255,.05);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.14),  /* top highlight */
+          inset 0 -2px 8px rgba(0,0,0,.45),     /* bottom recess */
+          inset 2px 0 6px rgba(0,0,0,.18),      /* left shade */
+          inset -2px 0 6px rgba(255,255,255,.08); /* right rim */
+      }
+      /* Inner rim ring to enhance depth without 3D transforms */
+      .bezel::after {
+        content: "";
+        position: absolute;
+        inset: 6px;
+        border-radius: 10px;
+        pointer-events: none;
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.10),
+          inset 0 -2px 6px rgba(0,0,0,.35);
+      }
+
+
+      .display {
+        padding: 16px 16px 10px;
+        min-height: 110px;
+        display: grid;
+        align-content: end;
+        gap: 6px;
+        background: linear-gradient(180deg, var(--gb-light), var(--gb-mid));
+        border-radius: 10px;
+        position: relative;
+        border: 2px solid var(--gb-deep);
+        box-shadow:
+          inset 0 0 0 2px rgba(255,255,255,.12),
+          inset 0 -8px 20px rgba(0,0,0,.15),
+          0 0 22px rgba(155,188,15,.28),
+          0 0 42px rgba(139,172,15,.18);
+        filter: contrast(1.02) saturate(1.05) brightness(1.02);
+      }
+      /* HUD elements over the screen */
+      .hud {
+        position: absolute;
+        top: 6px;
+        left: 8px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        pointer-events: none;
+        opacity: 0.95;
+        mix-blend-mode: multiply;
+      }
+      .battery {
+        --level: 0.75; /* 0..1 fill */
+        position: relative;
+        width: 38px;
+        height: 16px;
+        border: 2px solid var(--gb-deep);
+        border-radius: 3px;
+        background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(0,0,0,.06));
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,.18), inset 0 -2px 6px rgba(0,0,0,.08);
+      }
+      .battery::after {
+        content: "";
+        position: absolute;
+        right: -6px;
+        top: 4px;
+        width: 4px;
+        height: 8px;
+        background: var(--gb-deep);
+        border-radius: 1px;
+        box-shadow: 0 0 0 1px rgba(255,255,255,.15) inset;
+      }
+      .battery-level {
+        position: absolute;
+        left: 2px;
+        top: 2px;
+        bottom: 2px;
+        width: calc((100% - 4px) * var(--level));
+        border-radius: 2px;
+        background:
+          linear-gradient(180deg, rgba(11,37,11,.6), rgba(11,37,11,.25)),
+          repeating-linear-gradient(90deg, rgba(20,64,20,.85) 0, rgba(20,64,20,.85) 6px, rgba(50,96,48,.9) 6px, rgba(50,96,48,.9) 12px);
+        box-shadow:
+          0 0 6px rgba(139,172,15,.45),
+          0 0 12px rgba(155,188,15,.35) inset;
+      }
+      /* subtle LCD scanlines */
+      .display::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: repeating-linear-gradient(
+          to bottom,
+          rgba(15,56,15,0.08) 0px,
+          rgba(15,56,15,0.08) 2px,
+          transparent 2px,
+          transparent 4px
+        );
+        pointer-events: none;
+      }
+      .display::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(120% 80% at 50% -10%, rgba(255,255,255,.18), transparent 50%),
+          radial-gradient(80% 60% at 50% 120%, rgba(0,0,0,.12), transparent 60%);
+        mix-blend-mode: screen;
+        pointer-events: none;
+      }
+      .prev {
+        color: rgba(11,37,11,.8);
+        font-size: 0.9rem;
+        min-height: 1.2em;
+        text-align: right;
+        user-select: none;
+        font-family: Menlo, Consolas, Monaco, ui-monospace, SFMono-Regular, monospace;
+        letter-spacing: 0.5px;
+      }
+      .curr {
+        color: var(--screen-text);
+        font-size: clamp(1.8rem, 6vw, 2.6rem);
+        letter-spacing: 0.5px;
+        text-align: right;
+        word-break: break-all;
+        font-family: Menlo, Consolas, Monaco, ui-monospace, SFMono-Regular, monospace;
+        font-variant-numeric: tabular-nums;
+        text-shadow:
+          0 1px 0 rgba(255,255,255,.2),
+          0 0 6px rgba(155,188,15,.45),
+          0 0 14px rgba(139,172,15,.30);
+      }
+
+      .keys {
+        padding: 14px 6px 6px;
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 10px;
+      }
+      button {
+        appearance: none;
+        border: 0;
+        border-radius: 12px;
+        padding: 14px;
+        font-size: 1.05rem;
+        color: #0c1216;
+        background: linear-gradient(180deg, #eceae6, #d8d5cf);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.6),
+          inset 0 -2px 0 rgba(0,0,0,.08),
+          0 2px 0 rgba(0,0,0,.18);
+        cursor: pointer;
+        transition: transform .03s ease, filter .1s ease, background .2s ease;
+      }
+      button:active { transform: translateY(1px) scale(0.99); }
+      button:focus-visible { outline: 2px solid var(--gb-dark); outline-offset: 2px; }
+      button[data-span="2"] { grid-column: span 2; }
+
+      .op {
+        color: #fff;
+        background: linear-gradient(180deg, var(--btn-plum), var(--btn-plum-dark));
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.18),
+          inset 0 -2px 0 rgba(0,0,0,.25),
+          0 2px 0 rgba(0,0,0,.28);
+      }
+      .eq {
+        color: #fff;
+        background: linear-gradient(180deg, #883c66, #6c2f50);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.18),
+          inset 0 -2px 0 rgba(0,0,0,.25),
+          0 2px 0 rgba(0,0,0,.28);
+      }
+      .fn {
+        color: #f0f3f7;
+        background: linear-gradient(180deg, #515b69, #3f4753);
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.12),
+          inset 0 -2px 0 rgba(0,0,0,.25),
+          0 2px 0 rgba(0,0,0,.28);
+      }
+      .danger { filter: hue-rotate(-10deg) brightness(1.1); }
+
+      .footer {
+        padding: 8px 6px 6px;
+        font-size: 0.78rem;
+        color: rgba(0,0,0,.6);
+        text-align: center;
+        user-select: none;
+      }
+
+      /* ===== Tactility & Wear (modular, toggleable) ===== */
+      /* Rubber buttons: soft gloss + inner shadow + noise; pressed state */
+      .rubber-button {
+        position: relative;
+        overflow: hidden;
+        transition: transform .06s ease, box-shadow .12s ease, filter .12s ease;
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.20),
+          inset 0 -3px 6px rgba(0,0,0,.22),
+          0 1px 0 rgba(255,255,255,.03);
+      }
+      .rubber-button::before { /* gloss */
+        content: "";
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(120% 80% at 30% 10%, rgba(255,255,255,.18), transparent 55%),
+          linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,0) 40%);
+        mix-blend-mode: screen;
+        pointer-events: none;
+      }
+      .rubber-button::after { /* noise + light wear */
+        content: "";
+        position: absolute;
+        inset: 0;
+        opacity: .22;
+        border-radius: inherit;
+        pointer-events: none;
+        mix-blend-mode: multiply;
+        background-image:
+          url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.35'/></svg>");
+        background-size: 64px 64px;
+      }
+      .rubber-button.is-frequent::after { /* subtle smudge */
+        background-image:
+          radial-gradient(70% 60% at 50% 60%, rgba(0,0,0,.08), transparent 70%),
+          url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='1' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.35'/></svg>");
+        background-size: 100% 100%, 64px 64px;
+      }
+      .rubber-button:active, .rubber-button.is-pressed {
+        transform: translateY(1px);
+        box-shadow:
+          inset 0 2px 6px rgba(0,0,0,.35),
+          inset 0 -1px 0 rgba(255,255,255,.08);
+        filter: brightness(.98) saturate(.98);
+      }
+
+      /* (reverted) removed button-wrapper, LCD refinements, and calculator-body noise overlay */
+
+      /* Embedded cavity effect around buttons (tactile) */
+      .has-3d-effect .keys button.tactile-button {
+        position: relative;
+        overflow: visible; /* ensure outer ring/blur isn't clipped by .rubber-button */
+        /* embedded slot + rim light + soft base blur */
+        outline: 1px solid rgba(255,255,255,.06);   /* micro bevel without layout shift */
+        outline-offset: -1px;
+        box-shadow:
+          inset 0 1px 0 rgba(255,255,255,.16),      /* rubber top sheen */
+          inset 0 -2px 4px rgba(0,0,0,.18),         /* rubber bottom shade */
+          0 0 0 2px rgba(0,0,0,.35),                /* subtle black gap */
+          0 0 0 4px rgba(0,0,0,.12),                /* gentle cavity fade */
+          0 3px 6px rgba(0,0,0,.14),                /* delicate base blur */
+          -1px -1px 0 rgba(255,255,255,.06),        /* base top-left rim (light source) */
+          1px 1px 0 rgba(0,0,0,.05);                /* base bottom-right micro shade */
+      }
+      .has-3d-effect .keys button.tactile-button:active, .has-3d-effect .keys button.tactile-button.is-pressed {
+        box-shadow:
+          inset 0 2px 7px rgba(0,0,0,.36),          /* slightly deeper but subtle */
+          inset 0 -1px 0 rgba(255,255,255,.05),
+          0 0 0 2px rgba(0,0,0,.45),                /* gap slightly darker when pressed */
+          0 0 0 4px rgba(0,0,0,.16),                /* soft cavity wall */
+          0 2px 6px rgba(0,0,0,.16),
+          -1px -1px 0 rgba(255,255,255,.04);
+        filter: brightness(.985) saturate(.99);      /* minimal tonal change */
+      }
+
+      /* Wear on casing (opt-in via .has-wear on .calc) */
+      .has-wear.calc { position: relative; }
+      .has-wear.calc::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: var(--radius);
+        pointer-events: none;
+        mix-blend-mode: multiply;
+        opacity: .25;
+        background-image:
+          url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='128' height='128'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.28'/></svg>");
+        background-size: 128px 128px;
+      }
+      .has-wear.calc::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: var(--radius);
+        pointer-events: none;
+        background:
+          linear-gradient(180deg, rgba(255,255,255,.06), transparent 35%), /* top edge scuff */
+          linear-gradient(90deg, rgba(255,255,255,.04), transparent 30%),   /* left edge scuff */
+          radial-gradient(60% 50% at 100% 100%, rgba(0,0,0,.06), transparent 60%); /* bottom-right smudge */
+        mix-blend-mode: overlay;
+      }
+
+      /* LCD display visual treatment */
+      .lcd-display {
+        background-image:
+          linear-gradient(180deg, #b9d269, #9db84a), /* truer yellow-green */
+          linear-gradient(180deg, rgba(255,255,255,.15), rgba(0,0,0,0));
+        background-blend-mode: multiply, normal;
+        box-shadow:
+          inset 0 0 0 2px rgba(48,98,48,.45),
+          inset 0 -10px 16px rgba(0,0,0,.18),
+          0 0 14px rgba(146,170,40,.18);
+      }
+
+      /* RGB Split Filter Effect - Subtle Chromatic Aberration */
+      @keyframes rgbSplit {
+        0%, 100% { 
+          filter: 
+            drop-shadow(0.3px 0 0 rgba(255, 0, 0, 0.18))
+            drop-shadow(-0.3px 0 0 rgba(0, 0, 255, 0.18))
+            drop-shadow(0 0.3px 0 rgba(0, 255, 0, 0.12));
+        }
+        25% { 
+          filter: 
+            drop-shadow(0.4px 0 0 rgba(255, 0, 0, 0.21))
+            drop-shadow(-0.4px 0 0 rgba(0, 0, 255, 0.21))
+            drop-shadow(0 0.4px 0 rgba(0, 255, 0, 0.15));
+        }
+        50% { 
+          filter: 
+            drop-shadow(0.5px 0 0 rgba(255, 0, 0, 0.24))
+            drop-shadow(-0.5px 0 0 rgba(0, 0, 255, 0.24))
+            drop-shadow(0 0.5px 0 rgba(0, 255, 0, 0.18));
+        }
+        75% { 
+          filter: 
+            drop-shadow(0.4px 0 0 rgba(255, 0, 0, 0.21))
+            drop-shadow(-0.4px 0 0 rgba(0, 0, 255, 0.21))
+            drop-shadow(0 0.4px 0 rgba(0, 255, 0, 0.15));
+        }
+      }
+
+      /* Advanced RGB Split using pseudo-elements for more realistic chromatic aberration */
+      .calc {
+        position: relative;
+        animation: rgbSplit 4s ease-in-out infinite;
+      }
+
+      .calc::before,
+      .calc::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: var(--radius);
+        pointer-events: none;
+        z-index: -1;
+        mix-blend-mode: screen;
+      }
+
+      .calc::before {
+        background: inherit;
+        transform: translateX(0.5px);
+        filter: hue-rotate(0deg) saturate(1.1);
+        opacity: 0.09;
+      }
+
+      .calc::after {
+        background: inherit;
+        transform: translateX(-0.5px);
+        filter: hue-rotate(240deg) saturate(1.1);
+        opacity: 0.09;
+      }
+
+      /* Subtle RGB split for display elements */
+      .display, .bezel {
+        position: relative;
+        filter: 
+          drop-shadow(0.4px 0 0 rgba(255, 0, 0, 0.24))
+          drop-shadow(-0.4px 0 0 rgba(0, 0, 255, 0.24))
+          drop-shadow(0 0.4px 0 rgba(0, 255, 0, 0.18));
+      }
+
+      .display::before,
+      .display::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: 10px;
+        pointer-events: none;
+        z-index: -1;
+        mix-blend-mode: screen;
+        opacity: 0.4;
+      }
+
+      .display::before {
+        background: inherit;
+        transform: translateX(0.3px);
+        filter: hue-rotate(0deg) saturate(1.1);
+        opacity: 0.12;
+      }
+
+      .display::after {
+        background: inherit;
+        transform: translateX(-0.3px);
+        filter: hue-rotate(240deg) saturate(1.1);
+        opacity: 0.12;
+      }
+
+      /* Subtle RGB split for buttons */
+      .keys button {
+        position: relative;
+        filter: 
+          drop-shadow(0.2px 0 0 rgba(255, 0, 0, 0.15))
+          drop-shadow(-0.2px 0 0 rgba(0, 0, 255, 0.15))
+          drop-shadow(0 0.2px 0 rgba(0, 255, 0, 0.09));
+      }
+
+      .keys button::before,
+      .keys button::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: 12px;
+        pointer-events: none;
+        z-index: -1;
+        mix-blend-mode: screen;
+        opacity: 0.2;
+      }
+
+      .keys button::before {
+        background: inherit;
+        transform: translateX(0.2px);
+        filter: hue-rotate(0deg) saturate(1.05);
+        opacity: 0.06;
+      }
+
+      .keys button::after {
+        background: inherit;
+        transform: translateX(-0.2px);
+        filter: hue-rotate(240deg) saturate(1.05);
+        opacity: 0.06;
+      }
+
+      /* Subtle RGB split for text elements */
+      .curr, .prev {
+        position: relative;
+        filter: 
+          drop-shadow(0.3px 0 0 rgba(255, 0, 0, 0.21))
+          drop-shadow(-0.3px 0 0 rgba(0, 0, 255, 0.21))
+          drop-shadow(0 0.3px 0 rgba(0, 255, 0, 0.15));
+      }
+
+      /* Subtle RGB split for HUD elements */
+      .hud, .battery {
+        position: relative;
+        filter: 
+          drop-shadow(0.2px 0 0 rgba(255, 0, 0, 0.18))
+          drop-shadow(-0.2px 0 0 rgba(0, 0, 255, 0.18))
+          drop-shadow(0 0.2px 0 rgba(0, 255, 0, 0.12));
+      }
+
+      .hud::before,
+      .hud::after,
+      .battery::before,
+      .battery::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        pointer-events: none;
+        z-index: -1;
+        mix-blend-mode: screen;
+        opacity: 0.3;
+      }
+
+      .hud::before,
+      .battery::before {
+        background: inherit;
+        transform: translateX(0.2px);
+        filter: hue-rotate(0deg) saturate(1.05);
+        opacity: 0.09;
+      }
+
+      .hud::after,
+      .battery::after {
+        background: inherit;
+        transform: translateX(-0.2px);
+        filter: hue-rotate(240deg) saturate(1.05);
+        opacity: 0.09;
+      }
+      .lcd-display .curr, .lcd-display .prev {
+        /* Prefer web fonts, fall back to local seven-seg or monospace */
+        font-family: "Orbitron", "VT323", "Share Tech Mono", "Digital-7", "Segment7", "DS-Digital", Menlo, Consolas, ui-monospace, monospace;
+        letter-spacing: 1px;
+        text-shadow:
+          0 1px 0 rgba(255,255,255,.18),
+          0 0 8px rgba(50,90,30,.35);
+      }
+      .lcd-display .curr { font-weight: 700; }
+      /* subtle inset position for digits */
+      .lcd-display .curr { padding-right: 2px; }
+
+    </style>
+  </head>
+  <body>
+    <div class="bg" aria-hidden="true"></div>
+    <canvas id="glbg" class="glbg" aria-hidden="true"></canvas>
+    <canvas id="trail" class="trail" aria-hidden="true"></canvas>
+
+    <main class="calc has-3d-effect has-wear" role="application" aria-label="Calculator">
+      <div class="bezel">
+      <section class="display lcd-display">
+        <div class="hud" aria-hidden="true">
+          <div class="battery" style="--level:0.75">
+            <div class="battery-level"></div>
+          </div>
+        </div>
+        <div class="prev" id="prev" aria-live="polite"></div>
+        <div class="curr" id="curr" aria-live="polite">0</div>
+      </section>
+      </div>
+
+      <section class="keys">
+        <button class="fn danger rubber-button tactile-button" data-action="clear" aria-label="All Clear">AC</button>
+        <button class="fn rubber-button tactile-button" data-action="sign" aria-label="Toggle sign">±</button>
+        <button class="fn rubber-button tactile-button" data-action="percent" aria-label="Percent">%</button>
+        <button class="op rubber-button tactile-button" data-op="/" aria-label="Divide">÷</button>
+
+        <button class="rubber-button tactile-button" data-num>7</button>
+        <button class="rubber-button tactile-button" data-num>8</button>
+        <button class="rubber-button tactile-button" data-num>9</button>
+        <button class="op rubber-button tactile-button" data-op="*" aria-label="Multiply">×</button>
+
+        <button class="rubber-button tactile-button" data-num>4</button>
+        <button class="rubber-button tactile-button" data-num>5</button>
+        <button class="rubber-button tactile-button" data-num>6</button>
+        <button class="op rubber-button tactile-button" data-op="-" aria-label="Subtract">−</button>
+
+        <button class="rubber-button tactile-button" data-num>1</button>
+        <button class="rubber-button tactile-button" data-num>2</button>
+        <button class="rubber-button tactile-button" data-num>3</button>
+        <button class="op rubber-button tactile-button" data-op="+" aria-label="Add">+</button>
+
+        <button class="rubber-button tactile-button is-frequent" data-num data-span="2">0</button>
+        <button class="rubber-button tactile-button" data-num>.</button>
+        <button class="eq rubber-button tactile-button is-frequent" data-action="equals" aria-label="Equals">=</button>
+      </section>
+
+      <div class="footer">Keyboard: 0-9 . + − × ÷, Enter, Backspace, Esc</div>
+    </main>
+
+    <script>
+      (function() {
+        const prevEl = document.getElementById('prev');
+        const currEl = document.getElementById('curr');
+
+        let previous = '';
+        let current = '0';
+        let operation = null;
+        let overwrite = false; // after equals
+
+        const format = (val) => {
+          if (val === '' || val === '-') return val || '0';
+          const [i, d] = String(val).split('.');
+          const int = Number(i);
+          const intStr = Number.isFinite(int)
+            ? int.toLocaleString(undefined)
+            : i;
+          return d != null ? `${intStr}.${d}` : intStr;
+        };
+
+        const updateDisplay = () => {
+          currEl.textContent = format(current);
+          prevEl.textContent = operation && previous !== ''
+            ? `${format(previous)} ${opSymbol(operation)}`
+            : '';
+        };
+
+        const opSymbol = (op) => ({ '/': '÷', '*': '×', '+': '+', '-': '−' }[op] || op);
+
+        const clearAll = () => {
+          previous = '';
+          current = '0';
+          operation = null;
+          overwrite = false;
+          updateDisplay();
+        };
+
+        const inputDigit = (d) => {
+          if (overwrite) { current = '0'; overwrite = false; }
+          if (d === '.') {
+            if (current.includes('.')) return; // ignore duplicate dot
+            current = current === '0' ? '0.' : current + '.';
+            return updateDisplay();
+          }
+          if (current === '0') current = d;
+          else current += d;
+          updateDisplay();
+        };
+
+        const chooseOp = (op) => {
+          if (current === '-' || current === '.') return; // ignore incomplete number
+          if (previous !== '' && current !== '' && operation) {
+            compute();
+          }
+          else {
+            previous = current;
+          }
+          operation = op;
+          overwrite = true;
+          updateDisplay();
+        };
+
+        const compute = () => {
+          const a = parseFloat(previous);
+          const b = parseFloat(current);
+          if (!Number.isFinite(a) || !Number.isFinite(b) || !operation) return;
+          let res = 0;
+          switch (operation) {
+            case '+': res = a + b; break;
+            case '-': res = a - b; break;
+            case '*': res = a * b; break;
+            case '/': res = b === 0 ? NaN : a / b; break;
+          }
+          current = String(res);
+          previous = '';
+          operation = null;
+          overwrite = true;
+          updateDisplay();
+        };
+
+        const toggleSign = () => {
+          if (current === '0') return; // keep 0 as 0
+          if (current.startsWith('-')) current = current.slice(1);
+          else current = '-' + current;
+          updateDisplay();
+        };
+
+        const percent = () => {
+          const v = parseFloat(current);
+          if (!Number.isFinite(v)) return;
+          current = String(v / 100);
+          updateDisplay();
+        };
+
+        const del = () => {
+          if (overwrite) {
+            current = '0';
+            overwrite = false;
+            return updateDisplay();
+          }
+          if (current.length <= 1 || (current.length === 2 && current.startsWith('-'))) {
+            current = '0';
+          } else {
+            current = current.slice(0, -1);
+          }
+          updateDisplay();
+        };
+
+        // Mouse / touch
+        document.querySelectorAll('[data-num]').forEach(btn => {
+          btn.addEventListener('click', () => inputDigit(btn.textContent.trim()));
+        });
+        document.querySelectorAll('[data-op]').forEach(btn => {
+          btn.addEventListener('click', () => chooseOp(btn.getAttribute('data-op')));
+        });
+        document.querySelector('[data-action="clear"]').addEventListener('click', clearAll);
+        document.querySelector('[data-action="equals"]').addEventListener('click', compute);
+        document.querySelector('[data-action="sign"]').addEventListener('click', toggleSign);
+        document.querySelector('[data-action="percent"]').addEventListener('click', percent);
+
+        // Keyboard
+        window.addEventListener('keydown', (e) => {
+          const key = e.key;
+          if (/^[0-9]$/.test(key)) { inputDigit(key); return; }
+          if (key === '.') { inputDigit('.'); return; }
+          if (key === '+' || key === '-' || key === '*' || key === '/') { chooseOp(key); return; }
+          if (key === 'Enter' || key === '=') { e.preventDefault(); compute(); return; }
+          if (key === 'Backspace') { del(); return; }
+          if (key === 'Escape') { clearAll(); return; }
+          if (key === '%') { percent(); return; }
+        });
+
+        // Long press on delete via context menu on display (nice-to-have)
+        currEl.addEventListener('contextmenu', (e) => { e.preventDefault(); del(); });
+
+        // Initialize
+        updateDisplay();
+      })();
+
+      // WebGL animated background + mouse trail
+      (function() {
+        // Helpers
+        const DPR = Math.min(window.devicePixelRatio || 1, 1.5);
+        const cssVar = (name, fallback) => getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
+        const gbGreen = cssVar('--gb-light', '#9bbc0f');
+
+        // WebGL setup
+        const canvas = document.getElementById('glbg');
+        const gl = canvas.getContext('webgl', { antialias: false, depth: false, stencil: false, preserveDrawingBuffer: false });
+
+        if (gl) {
+          const vertSrc = `
+            attribute vec2 a;
+            void main(){ gl_Position = vec4(a, 0.0, 1.0); }
+          `;
+          const fragSrc = `
+            precision mediump float;
+            uniform vec2 u_res;
+            uniform float u_time;
+            uniform vec2 u_mouse; // 0..1
+
+            // Simple hash noise
+            float hash(vec2 p){
+              return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+            }
+
+            void main(){
+              vec2 uv = gl_FragCoord.xy / u_res.xy;
+              // Center-correct aspect
+              vec2 p = (uv - 0.5);
+              p.x *= u_res.x / u_res.y;
+
+              // Mouse influence (gentle offset)
+              vec2 m = (u_mouse - 0.5);
+              m.x *= u_res.x / u_res.y;
+              vec2 center = m * 0.2;
+              float d = length(p - center);
+
+              // Base dark palette (cool blue-violet)
+              vec3 c1 = vec3(0.05, 0.06, 0.10);
+              vec3 c2 = vec3(0.11, 0.13, 0.22);
+              float g = smoothstep(0.85, 0.0, d);
+              vec3 col = mix(c1, c2, g);
+
+              // Soft animated bands for motion
+              float bands = 0.5 + 0.5 * sin(6.2831 * (d * 1.2 - u_time * 0.06));
+              col += vec3(0.02, 0.016, 0.03) * bands;
+
+              // Subtle vignette
+              float vig = smoothstep(0.95, 0.35, length(uv - 0.5));
+              col *= mix(0.75, 1.0, vig);
+
+              // Grain
+              float n = hash(gl_FragCoord.xy + floor(u_time*10.0));
+              col += (n - 0.5) * 0.015;
+
+              gl_FragColor = vec4(col, 1.0);
+            }
+          `;
+
+          function compile(type, src){
+            const s = gl.createShader(type);
+            gl.shaderSource(s, src);
+            gl.compileShader(s);
+            if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+              console.warn(gl.getShaderInfoLog(s));
+            }
+            return s;
+          }
+          const vs = compile(gl.VERTEX_SHADER, vertSrc);
+          const fs = compile(gl.FRAGMENT_SHADER, fragSrc);
+          const prog = gl.createProgram();
+          gl.attachShader(prog, vs);
+          gl.attachShader(prog, fs);
+          gl.linkProgram(prog);
+          gl.useProgram(prog);
+
+          const locRes = gl.getUniformLocation(prog, 'u_res');
+          const locTime = gl.getUniformLocation(prog, 'u_time');
+          const locMouse = gl.getUniformLocation(prog, 'u_mouse');
+
+          // Fullscreen quad
+          const buf = gl.createBuffer();
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+          const verts = new Float32Array([
+            -1, -1,  1, -1,  -1,  1,  1,  1
+          ]);
+          gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+          const locA = gl.getAttribLocation(prog, 'a');
+          gl.enableVertexAttribArray(locA);
+          gl.vertexAttribPointer(locA, 2, gl.FLOAT, false, 0, 0);
+
+          let start = performance.now();
+          let mouse = [0.5, 0.5];
+
+          function resize(){
+            const w = Math.floor(innerWidth * DPR);
+            const h = Math.floor(innerHeight * DPR);
+            if (canvas.width !== w || canvas.height !== h) {
+              canvas.width = w; canvas.height = h;
+              canvas.style.width = '100%'; canvas.style.height = '100%';
+              gl.viewport(0, 0, w, h);
+              gl.uniform2f(locRes, w, h);
+            }
+          }
+          window.addEventListener('resize', resize);
+          window.addEventListener('orientationchange', resize);
+          window.addEventListener('pointermove', (e) => {
+            mouse = [ e.clientX / innerWidth, 1.0 - (e.clientY / innerHeight) ];
+          }, { passive: true });
+          resize();
+
+          function frame(){
+            const t = (performance.now() - start) / 1000;
+            gl.uniform1f(locTime, t);
+            gl.uniform2f(locMouse, mouse[0], mouse[1]);
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+            requestAnimationFrame(frame);
+          }
+          frame();
+        }
+
+        // Mouse trail on 2D canvas
+        const trail = document.getElementById('trail');
+        const ctx = trail.getContext('2d');
+        const points = [];
+        const TDPR = 1; // dedicated DPR for trail for perf
+        const SCALE = 0.5; // render in half-res offscreen buffer
+        const maxPoints = 200; // fewer particles
+        const maxAge = 1.0; // longer life for extended trail
+        const spacing = Math.max(3, 4 * TDPR); // smaller spacing (more samples)
+
+        // Offscreen low-res buffer
+        const off = document.createElement('canvas');
+        const ox = off.getContext('2d');
+
+        function resize2D(){
+          const w = Math.floor(innerWidth * TDPR);
+          const h = Math.floor(innerHeight * TDPR);
+          if (trail.width !== w || trail.height !== h) {
+            trail.width = w; trail.height = h;
+            trail.style.width = '100%'; trail.style.height = '100%';
+          }
+          const ow = Math.max(2, Math.floor(w * SCALE));
+          const oh = Math.max(2, Math.floor(h * SCALE));
+          if (off.width !== ow || off.height !== oh) {
+            off.width = ow; off.height = oh;
+          }
+        }
+        window.addEventListener('resize', resize2D);
+        window.addEventListener('orientationchange', resize2D);
+        resize2D();
+
+        const gb = (() => {
+          // Convert CSS color to RGBA components
+          const tmp = document.createElement('canvas');
+          const c = tmp.getContext('2d');
+          c.fillStyle = gbGreen; c.fillRect(0,0,1,1);
+          const d = c.getImageData(0,0,1,1).data;
+          return { r: d[0], g: d[1], b: d[2] };
+        })();
+
+        function pushPoint(x, y, t){
+          points.push({ x, y, t });
+          while (points.length > maxPoints) points.shift();
+        }
+
+        window.addEventListener('pointermove', (e) => {
+          const now = performance.now() / 1000;
+          const x = e.clientX * TDPR;
+          const y = e.clientY * TDPR;
+          const n = points.length;
+          if (n > 0) {
+            const last = points[n - 1];
+            const dx = x - last.x;
+            const dy = y - last.y;
+            const dist = Math.hypot(dx, dy);
+            if (dist > spacing) {
+              const steps = Math.min(10, Math.floor(dist / spacing));
+              for (let s = 1; s <= steps; s++) {
+                const f = s / (steps + 1);
+                pushPoint(last.x + dx * f, last.y + dy * f, last.t + (now - last.t) * f);
+              }
+            }
+          }
+          pushPoint(x, y, now);
+        }, { passive: true });
+
+        function lerp(a,b,t){ return a + (b - a) * t; }
+
+        function drawTrail(){
+          const now = performance.now() / 1000;
+          // prune stale points up-front
+          while (points.length > 2 && (now - points[1].t) > maxAge) points.shift();
+
+          // draw to offscreen buffer (low res)
+          ox.clearRect(0, 0, off.width, off.height);
+          ox.globalCompositeOperation = 'source-over';
+          ox.lineJoin = 'round';
+          ox.lineCap = 'round';
+
+          for (let i = 1; i < points.length; i++) {
+            const p0 = points[i-1];
+            const p1 = points[i];
+            const age = now - p1.t;
+            if (age > maxAge) continue;
+            const t = 1 - (age / maxAge);
+            const ease = t * t * (3 - 2 * t);
+
+            const mx = lerp(p0.x, p1.x, 0.5);
+            const my = lerp(p0.y, p1.y, 0.5);
+            const sx = SCALE, sy = SCALE;
+
+            // Near glow pass only (soft light trail)
+            const glowAlpha = 0.26 * ease;
+            const glowW = (16 + 34 * ease) * sx;
+            ox.strokeStyle = `rgba(${gb.r}, ${gb.g}, ${gb.b}, ${glowAlpha})`;
+            ox.lineWidth = glowW;
+            ox.shadowColor = `rgba(${gb.r}, ${gb.g}, ${gb.b}, ${0.35 * ease})`;
+            ox.shadowBlur = (22 + 28 * ease) * sx;
+            ox.beginPath();
+            ox.moveTo(p0.x * sx, p0.y * sy);
+            ox.quadraticCurveTo(p0.x * sx, p0.y * sy, mx * sx, my * sy);
+            ox.stroke();
+          }
+
+          // Composite offscreen to main at full res as a single soft-blurred layer
+          ctx.clearRect(0, 0, trail.width, trail.height);
+          ctx.imageSmoothingEnabled = true;
+          ctx.save();
+          ctx.filter = 'blur(28px)';
+          ctx.globalAlpha = 0.6;
+          ctx.drawImage(off, 0, 0, trail.width, trail.height);
+          ctx.restore();
+
+          requestAnimationFrame(drawTrail);
+        }
+        drawTrail();
+      })();
+    </script>
+  </body>
+  </html>
